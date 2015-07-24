@@ -17,7 +17,7 @@ class Module(framework.module):
     
     def module_run(self):
         domain = self.options['domain']['value']
-        base_query = "https://www.googleapis.com/plus/v1/people?query=" + domain + "&alt=json&key=AIzaSyAKg1VLgIftgGF0fQo9pJg9JXQrlDxbE90&maxResults=50"
+        base_query = "https://www.googleapis.com/plus/v1/people?query=" + domain + "&alt=json&key=&maxResults=50"
         hosts = []
         new = 0
         i = 0
